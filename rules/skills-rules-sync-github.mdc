@@ -1,0 +1,35 @@
+---
+description: 本地 skills/rules 更新后同步到 GitHub 的触发词与执行步骤
+alwaysApply: false
+---
+
+# Skills / Rules 同步 GitHub
+
+## 触发关键词（任一即执行同步）
+
+- 「同步 skill 到 github」「同步 skills 到 github」
+- 「更新 skill 推送到 github」「把 skill 推送到 github」
+- 「同步 rules 到 github」「同步 skills 和 rules 到 github」
+- 「本地 skill 更新后同步 github」「skill 更新后推送到 github」
+
+## 执行步骤
+
+1. **仓库位置**：`C:\Users\Administrator\.cursor`（仅跟踪 `skills/` 与 `rules/`，由 .gitignore 控制）。
+
+2. **同步命令**（在 `.cursor` 目录下执行）：
+   ```powershell
+   cd C:\Users\Administrator\.cursor
+   git add skills rules
+   git status
+   git commit -m "chore: sync skills and rules"
+   git push
+   ```
+
+3. **首次使用**：若尚未添加远程仓库，需先在 GitHub 创建新仓库（可空），再执行：
+   ```powershell
+   git remote add origin https://github.com/<你的用户名>/<仓库名>.git
+   git push -u origin master
+   ```
+   若默认分支为 `main`，则 `git branch -M main` 后再 push。
+
+4. **冲突/未配置**：若 `git push` 失败（未设 remote、无权限、需登录），提示用户检查远程地址与 GitHub 认证（HTTPS 或 SSH）。

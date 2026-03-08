@@ -1,0 +1,11 @@
+---
+description: 从 Cursor plans 与对话数据总结并更新 skills/rules 时遵循的路径与流程
+alwaysApply: false
+---
+
+# Plans 与 Skills/Rules 同步
+
+- Plans 目录：`C:\Users\Administrator\.cursor\plans\`，文件为 `*.plan.md`。
+- 对话数据：各项目下 `agent-transcripts`，当前多为 `.txt` 纯文本；已处理列表在 `skills/learned/_processed.txt`。
+- 总结更新时：先聚类 plans/对话主题，抽取可复用模式，再决定更新已有 skill 或新建；新 skill 需符合 create-skill 规范（frontmatter、描述含触发场景、篇幅控制）。
+- 执行细节与步骤见 skill：cursor-plans-transcripts。

@@ -1,0 +1,22 @@
+---
+description: 按计划执行或实现 plan 文件中的步骤时，必须用 Todo 管理执行顺序并标记进行中/已完成。确保 auto、GLM 等模型与 Claude plan 模式行为一致。
+alwaysApply: false
+---
+
+# 计划执行时的 Todo 强制规范
+
+当用户要求「按计划执行」「Implement the plan」或对话上下文中存在 plan 文件（含执行顺序建议/To-dos）时，**必须**遵守以下行为，不因模型（Claude/auto/GLM 等）不同而省略：
+
+1. **从计划提炼 Todo**
+   - 若 plan 中有「执行顺序建议」或分步列表，将每一步对应为一个 todo 项（内容简短、可执行）。
+   - 若 plan 的 frontmatter 或正文中已有 To-dos，可直接沿用其 id/content，不再重复创建。
+
+2. **按顺序推进并更新状态**
+   - 开始做某一步时：将该步 todo 设为 `in_progress`。
+   - 完成该步后：将该步 todo 设为 `completed`，再开始下一步。
+   - 不跳过 todo 更新：每做一步就更新一次状态，直到全部 `completed`。
+
+3. **不编辑 plan 文件本身**
+   - 仅通过 TodoWrite 工具更新任务状态，不修改 plan 的 .plan.md 文件内容。
+
+这样无论使用 Claude、auto 还是 GLM，按计划执行时都会有一致的步骤与完成状态追踪。

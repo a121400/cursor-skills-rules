@@ -1,0 +1,29 @@
+﻿{
+    "total_tool_calls":  423,
+    "tool_usage":  {
+                       "run_terminal_cmd":  26,
+                       "Grep":  68,
+                       "Glob":  4,
+                       "read_file":  26,
+                       "ApplyPatch":  3,
+                       "search_replace":  60,
+                       "Shell":  46,
+                       "Write":  26,
+                       "codebase_search":  1,
+                       "LS":  8,
+                       "Delete":  6,
+                       "Task":  5,
+                       "StrReplace":  30,
+                       "TodoWrite":  14,
+                       "list_dir":  1,
+                       "Read":  77,
+                       "ReadLints":  1,
+                       "CallMcpTool":  19,
+                       "CreatePlan":  2
+                   },
+    "last_updated":  "2026-02-28T04:07:54",
+    "corrections_count":  4,
+    "errors_count":  10,
+    "total_messages":  51,
+    "total_sessions":  6
+}

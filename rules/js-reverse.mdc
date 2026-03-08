@@ -1,0 +1,100 @@
+---
+description: JS 逆向分析背景知识与工具速查（流程概要、混淆/算法识别、VM/WASM/环境检测、常见问题）。按需在 JS 逆向任务中由 AI 引入。
+alwaysApply: false
+---
+
+# JS 逆向分析指南
+
+JS 逆向流程概要与技术参考。详细步骤见 skill js-reverse-practical，AST 解混淆见 ast-deobfuscate。
+
+---
+
+## 一、分析流程概要
+
+| 阶段 | 目标 | 要点 |
+|------|------|------|
+| 1 请求分析 | 找到含加密参数的请求 | network_get_requests 筛 XHR/Fetch；识别 x-sign、signature 等；记 URL、方法、参数结构 |
+| 2 入口定位 | 找到加密函数入口 | 优先 network_get_request_initiator 拿调用栈；或 xhr_breakpoint_set + 触发请求后 debugger_get_paused_state、get_call_stack |
+| 3 代码分析 | 识别混淆与算法 | 见下「混淆类型」「加密算法」表 |
+| 4 解混淆 | 还原可读代码 | Babel AST：字符串数组还原、常量折叠、控制流还原、死代码移除。见 ast-deobfuscate |
+| 5 算法还原 | Python 实现 | JS→Python 差异（见下）、to_int32、hashlib/hmac/pycryptodome |
+| 6 验证 | 确认一致 | 同输入对比 JS 与 Python 输出；至少 3 组；实际请求测试 |
+
+---
+
+## 混淆类型与算法识别
+
+**混淆类型**:
+
+| 特征 | 混淆类型 |
+|------|---------|
+| _0x 前缀变量 | OB 混淆器 |
+| 大型字符串数组 + 索引访问 | 字符串混淆 |
+| while(true) + switch | 控制流平坦化 |
+| 多层 eval | 代码加密 |
+| jsjiami.com 标记 | sojson |
+| WebAssembly 调用 | WASM 保护 |
+| 自定义字节码数组 | VM 保护 |
+
+**加密算法**:
+
+| 特征 | 算法类型 |
+|------|---------|
+| 输出 32 位 hex | MD5 |
+| 输出 40 位 hex | SHA1 |
+| 输出 64 位 hex | SHA256 |
+| 0x67452301 等常量 | MD5/SHA 系列 |
+| S-box (0x63, 0x7c...) | AES |
+| ipad/opad 或 0x36/0x5c | HMAC |
+| 大数运算、RSA 关键字 | RSA |
+
+**JS → Python**：charCodeAt→ord、fromCharCode→chr、join('')→''.join、parseInt(s,16)→int(s,16)、>>> 无符号右移→(x & 0xFFFFFFFF) >> n。32 位：to_int32 用 & 0xFFFFFFFF 与 < 0x80000000 判断。
+
+---
+
+## 二、高级场景
+
+### VM 保护
+
+识别：大数组（字节码）、while+switch 解释器、虚拟寄存器/栈。步骤：定位字节码与解释器 → Hook 映射操作码 → 建表 → 反汇编 → 还原逻辑。
+
+### WASM
+
+工具：wasm2wat、wasm-objdump、wasm-decompile；可选 ghidra-mcp。步骤：提取 .wasm → 看导出函数 → 分析 JS 调用方式 → 反编译或 Python 直接调 WASM（如 wasmer）。
+
+### 环境检测/指纹
+
+常见：Navigator、Screen、Canvas toDataURL、WebGL、AudioContext、字体测量。Hook 关键 API → 定位指纹函数 → 分析组合 → 确定绕过策略。
+
+---
+
+## 三、jshook MCP 工具速查
+
+| 功能 | jshook 命令 |
+|------|-------------|
+| 查看请求 | network_get_requests |
+| 请求发起栈 | network_get_request_initiator(requestId) |
+| 响应体 | network_get_response_body |
+| 搜索代码 | search_in_scripts |
+| 获取源码 | get_script_source、get_all_scripts |
+| XHR 断点 | xhr_breakpoint_set |
+| 代码/文本断点 | breakpoint_set、breakpoint_set_on_text |
+| 暂停信息与栈 | debugger_get_paused_state、get_call_stack |
+| 单步/继续 | debugger_step_over、debugger_step_into、debugger_step_out、debugger_resume |
+| 帧上求值 | debugger_evaluate、debugger_evaluate_global |
+| 页面执行 | page_evaluate、console_execute |
+| Hook/追踪 | console_inject_function_tracer、manage_hooks 等 |
+
+*若使用 ghidra-mcp：list_functions、decompile_function、list_strings、get_xrefs_to 等。*
+
+---
+
+## 四、常见问题
+
+**找不到加密入口？** 换关键词 search_in_scripts；用 xhr_breakpoint_set 从请求倒推；Hook XMLHttpRequest.prototype.setRequestHeader 或 fetch。
+
+**混淆太重？** 先识别类型，用对应 AST 解混淆（ast-deobfuscate）；复杂时可动态执行而非完全还原。
+
+**Python 与 JS 不一致？** 查整数溢出、字符串编码（UTF-8/UTF-16）、字节序；逐步对比中间值。
+
+**VM/WASM？** 评估是否值得深挖；可 Node 跑原代码或 Python 调 WASM。

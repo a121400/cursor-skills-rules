@@ -1,0 +1,10 @@
+---
+description: Git 提交和 PR 规范
+alwaysApply: false
+---
+
+# Git 规范
+
+- 提交格式：<type>: <description>（类型：feat, fix, refactor, docs, test, chore, perf, ci）
+- PR：分析完整历史，写全面摘要，附测试计划
+- 流程：先规划 -> TDD -> 代码审查 -> 规范提交
