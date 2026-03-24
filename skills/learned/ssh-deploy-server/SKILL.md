@@ -145,6 +145,68 @@ systemctl start/stop/restart/status <name>   # 服务管理
 journalctl -u <name> -f                       # 实时日志
 ```
 
+## Nginx 反代配置（端口未在腾讯云安全组放行时）
+
+服务器 42.193.177.63 的腾讯云安全组只放行了有限端口（80/443/5050/8080 等），新端口不一定能外部访问。**优先用 nginx 反代到 80 端口**而非开新端口。
+
+### 关键注意事项
+
+1. **PowerShell 会展开 `$host`/`$remote_addr` 等变量**，不能通过 SSH heredoc 或 Python inline 命令写 nginx 配置。必须用 **paramiko sftp 写文件**（写独立 .py 脚本执行）。
+
+2. **宝塔面板 phpfpm_status.conf 监听 80 端口**且 `server_name 127.0.0.1`，内部 curl 测试时会被它截获。测试用 `-H 'Host: 42.193.177.63'` 或直接从外部请求。
+
+3. **新 server 块必须加 `default_server`**，否则请求可能落到 phpfpm_status 的 server 块。
+
+### 配置模板（paramiko sftp 写入）
+
+```python
+import paramiko
+
+ssh = paramiko.SSHClient()
+ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+ssh.connect("42.193.177.63", 22, "root", timeout=10)
+
+conf = (
+    "server {\n"
+    "    listen 80 default_server;\n"
+    "    server_name _;\n"
+    "\n"
+    "    location /<prefix>/ {\n"
+    "        proxy_pass http://127.0.0.1:<PORT>/;\n"
+    "        proxy_set_header Host " + "$" + "host;\n"
+    "        proxy_set_header X-Real-IP " + "$" + "remote_addr;\n"
+    "        proxy_set_header X-Forwarded-For " + "$" + "proxy_add_x_forwarded_for;\n"
+    "    }\n"
+    "}\n"
+)
+
+sftp = ssh.open_sftp()
+with sftp.open("/www/server/panel/vhost/nginx/my_app.conf", "w") as f:
+    f.write(conf)
+sftp.close()
+
+_, out, _ = ssh.exec_command("nginx -t 2>&1")
+print(out.read().decode())
+_, out, _ = ssh.exec_command("nginx -s reload 2>&1")
+print(out.read().decode())
+ssh.close()
+```
+
+### 前端适配反代路径
+
+前端 fetch 请求的 URL 必须加 BASE 前缀，否则通过 `/prefix/` 反代时 API 打不到：
+
+```javascript
+const BASE = window.location.pathname.replace(/\/(admin|index\.html)?$/, '') || '';
+fetch(BASE + '/api/submit', { ... })
+```
+
+### nginx 配置文件位置
+
+- 宝塔 vhost 目录：`/www/server/panel/vhost/nginx/`
+- 主配置末尾 `include /www/server/panel/vhost/nginx/*.conf;`
+- 新项目创建 `<项目名>.conf` 即可被自动加载
+
 ## 常见问题
 
 | 问题 | 解决 |
@@ -155,9 +217,22 @@ journalctl -u <name> -f                       # 实时日志
 | PowerShell 中 curl 被劫持 | 用 `Invoke-WebRequest` 代替 |
 | 中文路径 PowerShell 报错 | Shell 工具用 `working_directory` 参数 |
 | scp 权限拒绝 | 检查 SSH 密钥是否正确添加 |
+| 新端口外部访问不了 | 腾讯云安全组没放行，用 nginx 反代到 80 端口 |
+| nginx 配置 `$host` 变成空 | PowerShell 展开了变量，用 paramiko sftp 写文件 |
+| nginx 反代 404 | 内部测试 Host 是 127.0.0.1 被 phpfpm_status 截获，加 `default_server` 或用外部 Host 测试 |
 
 ## 已知服务器
 
-| 项目 | IP | 端口 | 路径 | 服务名 |
-|------|-----|------|------|--------|
-| card_server | 42.193.177.63 | 5050 | /opt/card_server | card-server |
+**IP**: `42.193.177.63` | **系统**: OpenCloudOS 9.4 | **SSH**: root 免密 | **宝塔面板**: 8888 端口 (路径 `/tencentcloud`)
+
+**腾讯云安全组已放行端口**: 20, 21, 22, 80, 443, 5050, 8080, 8888, 39000-40000（但 39000-40000 实际也被拦截，只有前面几个确认可用）
+
+**nginx**: `/usr/bin/nginx` v1.28.1，配置目录 `/www/server/panel/vhost/nginx/`
+
+**已安装 Python 包**: Flask, requests, pycryptodome
+
+| 项目 | 本地端口 | Nginx 路径 | 服务器路径 | 服务名 |
+|------|---------|-----------|-----------|--------|
+| card_server (花小猪) | 5050 | 直连 :5050 | /opt/card_server | card-server |
+| hxz_server (花小猪) | 8080 | — | /opt/hxz_server | — |
+| xc_server (香菜) | 39088 | /xc/ → :39088 | /opt/xc_server | xc-server |
