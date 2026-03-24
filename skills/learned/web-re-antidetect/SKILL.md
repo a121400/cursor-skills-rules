@@ -1,6 +1,6 @@
 ---
 name: web-re-antidetect
-description: Web 逆向工程与反调试绕过。JS 加密逆向、验证码破解、反 F12 绕过、Cookie/Token 签名分析、浏览器指纹反检测。从 kimi/google/js/lanren/yuabn/Desktop/XC 等 15+ 项目提取。
+description: Web 反检测与浏览器指纹绕过。puppeteer/jshook 反 webdriver 检测、navigator/plugins/canvas 伪装、tls_client TLS 指纹绕过、SunnyNet 代理应用、HMAC-SHA256 签名还原、jsdom 环境补全。当目标站点有浏览器指纹检测/反自动化/TLS 指纹拦截/需要 SunnyNet 抓包分析时使用。
 ---
 
 # Web 逆向与反检测 (Auto-Learned)
@@ -50,6 +50,7 @@ Object.defineProperty(window, 'outerHeight', { get: () => window.innerHeight });
 | google (Gmail) | identity-signin token | 纯协议分析 |
 | lanren | validate 处理 | 登录流程 token 链 |
 | XC (同程旅行) | User-Dun 指纹签名 | 见下方专项总结 |
+| crxn (宜宾商城) | JCAP WASM + RSA + HMAC-SHA256 签名 | Node.js WASM 桥接 + 纯 Python 签名 |
 
 ## 验证码处理
 
@@ -64,6 +65,15 @@ def get_slide_distance(bg_bytes, slide_bytes):
     result = ocr.slide_match(slide_bytes, bg_bytes, simple_target=True)
     return result['target'][0]  # x 坐标
 ```
+
+### 京东云 (JCAP) 滑块
+
+详见专项技能 `jdcloud-captcha-jcap`。核心要点:
+- WASM `jcap.js` 加密 `tk`/`ct` 参数，无法纯 Python 复现，必须 Node.js 桥接
+- 接口: `captcha-api-global.jdcloud.com` 的 `/cgi-bin/api/fp` + `/cgi-bin/api/check`
+- 流程: fp 上报指纹 -> check 触发 tp=4 降级 -> 滑块图片 base64 -> ddddocr 检测 -> check 提交轨迹 -> vt token
+- 认证头: `x-jdcloud-captcha-auth` 由 WASM `getCaptchaAuth(appId)` 生成
+- 坐标需要原图->显示缩放（SCALE = DISPLAY_W / ORIG_W），ddddocr 有偏差需多次尝试 + 偏移
 
 ### 顶象 (DingXiang) 滑块
 
@@ -245,6 +255,40 @@ const browser = await puppeteer.launch({
 });
 ```
 
+## DES 已知明文攻击 (验证码参数逆向)
+
+当目标使用 DES 加密参数（如数美验证码 fverify），且能通过 SunnyNet/Charles 抓取真实请求时，可用已知明文攻击反推 DES Key。
+
+### 方法
+
+1. **抓多组请求**: SunnyNet 抓 3+ 次相同操作的加密请求
+2. **识别固定参数**: 跨会话对比，加密值相同的参数使用固定 key + 固定明文
+3. **猜测明文**: 根据参数语义猜测（如 trueWidth=300, trueHeight=150, lang=zh-cn, default, -1, 0, 1）
+4. **提取候选 key**: 从 JS SDK 中提取所有 8 字符 hex 字符串 (`/['"][0-9a-f]{8}['"]/g`)
+5. **暴力匹配**: 每个候选 key 加密每个猜测明文，与抓包值比对
+
+```python
+from Crypto.Cipher import DES
+import base64
+
+def try_keys(candidates, plaintext_guesses, target_b64):
+    for key_str in candidates:
+        key = key_str.encode()[:8].ljust(8, b'\0')
+        for pt in plaintext_guesses:
+            data = pt.encode()
+            data += b'\0' * ((8 - len(data) % 8) % 8)
+            enc = base64.b64encode(DES.new(key, DES.MODE_ECB).encrypt(data)).decode()
+            if enc == target_b64:
+                return key_str, pt
+    return None, None
+```
+
+### 适用范围
+
+- 数美(Shumei)验证码 fverify 参数（每个参数不同 key，详见 `shumei-captcha-reverse` skill）
+- 其他使用 DES-ECB + Base64 的验证码/签名场景
+- 前提: 能抓到真实加密请求 + JS SDK 中有 key 线索
+
 ## 通用策略: 逆向前的侦察清单
 
 在投入大量时间逆向签名算法之前，按此顺序检查:
@@ -316,4 +360,111 @@ const browser = await puppeteer.launch({
 - 添加响应文件规则前确保本地文件是最新修改版
 - 分析完成后及时清除不需要的规则，避免干扰正常上网
 
-Last updated: 2026-03-07
+## API 签名逆向实战 (HMAC-SHA256)
+
+crxn.cn 宜宾商城的 API 签名 (`sign` 参数) 逆向案例:
+
+### 签名算法
+
+```python
+import hashlib, hmac, json
+
+def calc_sign(data, secret_key):
+    keys = sorted(data.keys())
+    values = []
+    for k in keys:
+        v = data[k]
+        if v == "":
+            continue
+        if isinstance(v, (dict, list)):
+            v = json.dumps(v, separators=(",", ":"))
+        values.append(str(v))
+    plain = "&".join(values)
+    return hmac.new(secret_key.encode(), plain.encode(), hashlib.sha256).hexdigest()
+```
+
+### 逆向要点
+
+1. **sign 定位**: SunnyNet 抓包看请求体中的 `sign` 字段，然后用 jshook `search_in_scripts("sign")` 定位生成函数
+2. **算法识别**: 参数按 key 排序 -> 取 value（空值跳过，对象 JSON 序列化） -> `&` 连接 -> HMAC-SHA256
+3. **secretKey 来源**: 小程序配置注入 `apiH52Native.secretKey`，不在 JS 源码中明文存在
+4. **验证方法**: 从 SunnyNet 抓多组真实请求，用猜测的算法 + key 算 sign 对比，全部一致即确认
+5. **secretKey 可能位置**: 小程序 `app-config.json`、页面 `window.__INITIAL_STATE__`、API 配置接口返回
+
+### 小程序签名的 secretKey 查找顺序
+
+```
+1. jshook search_in_scripts("secretKey") / search_in_scripts("appSecret")
+2. SunnyNet 搜索响应体中是否有配置下发
+3. 微信小程序 wxapkg 解包（PC 端路径: %APPDATA%/Tencent/WeChat/radium/web/*/）
+4. 如果都找不到，问用户是否有配置信息
+```
+
+## tls_client 纯协议绕过反爬 (LinkedIn 999 案例)
+
+### 问题背景
+
+LinkedIn 对未登录的 profile 页请求返回 999 (反爬)。`requests`/`curl_cffi` 直接请求全部被拦。
+
+### 关键发现: sec-fetch-* headers
+
+`tls_client` (Go TLS 指纹库) + 完整的 `Sec-Fetch-*` headers 可以绕过 999:
+
+```python
+import tls_client
+
+SEC_FETCH_HEADERS = {
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Cache-Control": "no-cache",
+    "Referer": "https://www.linkedin.com/",
+    "Sec-Ch-Ua": '"Chromium";v="120", "Not A(Brand";v="24", "Google Chrome";v="120"',
+    "Sec-Ch-Ua-Mobile": "?0",
+    "Sec-Ch-Ua-Platform": '"Windows"',
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "same-origin",
+    "Sec-Fetch-User": "?1",
+    "Upgrade-Insecure-Requests": "1",
+}
+
+s = tls_client.Session(client_identifier="chrome_120", random_tls_extension_order=True)
+# 先访问 login 页拿 cookie
+s.get("https://www.linkedin.com/login", allow_redirects=True, timeout_seconds=15)
+# 再带 sec-fetch headers 访问 profile
+r = s.get("https://www.linkedin.com/in/username", headers=SEC_FETCH_HEADERS, allow_redirects=True)
+# status 200=存在, 404=不存在
+```
+
+### SOCKS5 代理下的 IP 信誉问题
+
+- **直连**: tls_client 完美工作 (200/404)
+- **SOCKS5 代理**: login 成功拿 cookie，但 profile 页全部 999
+- **根因**: 不是 TLS 指纹问题，是代理 IP 被 LinkedIn 标记为代理 (住宅代理也不行)
+- **解法**: 动态代理 (每次请求换 IP)，遇 999 则 re-init session 换新 IP 重试
+- 动态代理约 60% 首次成功，40% 需重试 1-3 次换到未被标记的 IP
+
+### 999 重试策略
+
+```python
+while not stopped:
+    r = session.get(url, headers=SEC_FETCH_HEADERS)
+    if r.status_code == 999:
+        session.init()  # 重建 session，动态代理自动换 IP
+        time.sleep(3 + attempt * 2)
+        continue
+    if r.status_code in (200, 404):
+        return result
+```
+
+### tls_client vs curl_cffi vs requests
+
+| 库 | TLS 指纹 | LinkedIn 直连 | LinkedIn + SOCKS5 |
+|---|---|---|---|
+| requests | 无 | 999 | 999 |
+| curl_cffi (impersonate) | Chrome | 200/404 | 999 (IP 信誉) |
+| tls_client (chrome_120) | Chrome | 200/404 | 999 (IP 信誉) |
+
+直连时 tls_client 和 curl_cffi 都能绕过，走代理时两者都受 IP 信誉影响。
+
+Last updated: 2026-03-23

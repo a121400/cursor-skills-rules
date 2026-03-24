@@ -1,9 +1,11 @@
 ---
 name: js-reverse-practical
-description: JS 逆向实战教程。扣代码流程、加密参数定位、Python 集成、RPC 通信、JS Recon 工具、反混淆 AST 还原。来源：腾讯云实战教程 + JS Recon 文档。
+description: JS 逆向扣代码实战。加密参数定位(Network/断点/jshook回溯)、扣代码技巧(Webpack加载器/环境补全)、Python集成(execjs/subprocess/RPC)、加密类型识别(MD5/SHA/AES/RSA/SM)、AST反混淆(Babel)、JS Recon 工具。当用户要逆向 JS 加密、扣代码、分析sign/token参数、反混淆还原时使用。
 ---
 
 # JS 逆向实战教程
+
+执行时遵循 **reverse-auto-execute**：实际执行命令/脚本/MCP、反复测试、根据报错诊断并重试、与用户交互解决，不轻易只给方案或暂停。
 
 ## 核心流程：从定位到复现
 
@@ -318,4 +320,47 @@ js-recon map -u https://target.com
 [ ] 11. 复杂场景备选: RPC 桥接 / headed Chrome
 ```
 
-Last updated: 2026-02-27
+## AST 反混淆详细流程（Babel）
+
+### 目录约定
+
+```
+project/
+├── source/original/          # 原始混淆（只读）
+├── scripts/                  # 每步一个脚本
+├── intermediate/             # 每步输出，可回滚
+└── source/deobfuscated/      # 最终输出
+```
+
+### 环境
+
+```bash
+npm install @babel/parser @babel/traverse @babel/generator @babel/types prettier
+```
+
+### 步骤
+
+1. **Step 0 预分析**：格式化 → 识别特征（高频前缀 _0x/a0_、大字符串数组、while+switch → 控制流平坦化）
+2. **Step 1 字符串解密**：Node vm 沙箱执行数组+旋转+访问函数，遍历 CallExpression 替换为字面量
+3. **Step 2 表达式简化**：常量折叠(path.evaluate())、布尔还原(![]→false, !![]→true)、单返回代理函数内联
+4. **Step 3 属性规范化**：obj['prop'] → obj.prop、逗号表达式拆开
+5. **Step 4 控制流还原**：while(true){ switch(...) } 按执行顺序重排 case 块
+6. **Step 5 死代码删除**：不可达分支替换、未引用变量/函数删除。**Step 2 与 Step 5 必须循环**（最多 ~50 轮）
+7. **Step 6 变量重命名与收尾**：仅对确定模式重命名（webpack 的 module/exports 等）
+
+### Babel API 速查
+
+- 静态求值：`path.evaluate()` → `{ confident, value }`
+- 替换/删除：`path.replaceWith(node)`、`replaceWithMultiple([nodes])`、`path.remove()`
+- 作用域：`path.scope.getBinding(name)`、`path.scope.rename(old, new)`
+
+### 与 jshook MCP 配合
+
+| 阶段 | jshook 用法 |
+|------|-------------|
+| 分析 | search_in_scripts 搜索混淆特征 |
+| 验证 | page_evaluate 执行少量解密调用确认可行 |
+| 控制流 | breakpoint_set + debugger_step_over 跟踪 switch-case 执行顺序 |
+| 最终 | 在浏览器中用解混淆后的代码替换原始代码验证功能 |
+
+Last updated: 2026-03-25

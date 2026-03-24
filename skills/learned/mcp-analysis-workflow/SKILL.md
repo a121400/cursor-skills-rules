@@ -1,6 +1,6 @@
 ---
 name: mcp-analysis-workflow
-description: MCP 工具分析工作流。流量分析、协议逆向、接口提取的通用模式。
+description: MCP 工具分析工作流。游戏协议抓包解析、多游戏 profile 配置、Frida 桥接 MCP(无CDP时)、SunnyNet HTTP API 抓取、加密参数对照分析。当需要用 MCP 工具做流量分析/协议逆向/接口提取时使用。
 ---
 
 # MCP 分析工作流
@@ -36,6 +36,35 @@ description: MCP 工具分析工作流。流量分析、协议逆向、接口提
 
 - 目标进程无对外 CDP 端口时：Frida 脚本在进程内抓 Network/Console 或执行逻辑，经 `send()` 发到 Node；Node 开本地 HTTP（如 29222）暴露 `/network`、`/console`、`POST /evaluate`、`GET /dom`，MCP 连该 HTTP 即获得类 DevTools 能力。
 - 反向调用：MCP 的 evaluate 请求由 Node 经 `script.postMessage()` 发 Frida，脚本在能访问页面上下文时执行后 `send()` 回 Node 再响应 HTTP。主进程拿不到页面上下文时可先做 Phase1（仅 Network/通道），Phase2 再在渲染进程 attach 或注入页面 JS 与桥接通信。
+
+## SunnyNet 配套 HTTP API 抓取 (IM/客服系统)
+
+IM 系统的 WebSocket 协议之外，通常有配套的 HTTP 管理接口。用 SunnyNet 抓取的标准流程：
+
+1. 在浏览器中操作目标功能（如转移客户、设置在线状态）
+2. `request_search(url="关键词")` 按 URL 关键词筛选
+3. `request_get(theology=id)` 查看完整请求体和响应体
+4. HTTP API 通常无加密，Cookie 鉴权 + JSON body，直接 requests 调用
+
+### 实例：快手客服 HTTP API
+
+| 接口 | 方法 | 用途 |
+|------|------|------|
+| /cs/assistant/stat/colleagueView | GET | 获取可转移的在线同事列表 |
+| /cs/assistant/session/batchTransferSessions | POST | 批量转移客户会话 |
+| /cs/assistant/sessionpool/count | GET | 获取会话池排队数 |
+| /cs/assistant/stat/personalView | GET | 个人接待统计 |
+
+## SunnyNet 加密参数对照分析
+
+当目标使用加密提交（如验证码 fverify），可通过 SunnyNet 抓多组真实请求来反推加密逻辑：
+
+1. **抓 3+ 组相同操作的请求**: `request_search(url="fverify")` 或按关键词搜索
+2. **提取加密参数**: `request_get(theology=id)` 获取完整URL参数
+3. **跨会话对比**: 相同加密值 = 固定key + 固定明文；不同 = 动态参数
+4. **配合 JS 分析**: 从 SDK 提取候选 key，结合已知明文攻击反推（详见 `shumei-captcha-reverse` skill）
+
+此方法适用于 DES/AES-ECB 等确定性加密（相同输入相同输出），不适用于 CBC/CTR 等带 IV 的模式。
 
 ## 注意事项
 

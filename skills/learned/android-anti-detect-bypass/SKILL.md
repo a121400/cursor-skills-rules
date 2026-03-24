@@ -1,9 +1,11 @@
 ---
 name: android-anti-detect-bypass
-description: 安卓加固/模拟器/root/Frida 检测绕过。百度加固(Sagittarius)、多进程检测、SO 最小补丁、Frida hook 顺序、child-gating、syscall 绕过、MuMu 属性伪装。适用于 i茅台等带百度加固/网易安全 SDK 的 APP 在 MuMu 上运行。
+description: 安卓反检测绕过技术。Frida hook 顺序/child-gating/syscall 拦截、SO 最小补丁(Houdini)、MuMu 应用级属性伪装、百度加固bypass、模拟器/root/反调试检测绕过。当 APP 检测到模拟器/root/Frida/调试器而崩溃或闪退时使用。
 ---
 
 # 安卓反检测绕过（提炼自 i茅台等实战）
+
+执行时遵循 **reverse-auto-execute**：实际执行 adb/frida 等命令、反复测试、诊断后重试或与用户交互，不轻易只给方案或暂停。
 
 ## 检测分层与对策
 

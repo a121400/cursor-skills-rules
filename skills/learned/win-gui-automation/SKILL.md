@@ -1,6 +1,6 @@
 ---
 name: win-gui-automation
-description: Windows GUI 自动化常用模式。pywin32 窗口查找、后台截图、后台点击、GDI 资源管理、OCR 集成、PyQt5 桌面悬浮窗工具开发。
+description: Windows GUI 自动化。pywin32 窗口查找/后台截图(BitBlt)/后台点击(PostMessage)、GDI 资源清理顺序、PyQt5 悬浮窗/全局热键、OCR 集成。当用户要做 Windows 窗口自动化/后台操作/桌面小工具时使用。
 ---
 
 # Windows GUI 自动化 (Auto-Learned)

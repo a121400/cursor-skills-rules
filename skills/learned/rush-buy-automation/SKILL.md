@@ -1,6 +1,6 @@
 ---
 name: rush-buy-automation
-description: 抢购/秒杀自动化模式。嘉立创纪念币、电商抢购、库存监控、多线程并发、代理IP。币安期货、TLS指纹绕过。从 hxjlc/sxd/sxdcg/YLH/vava 等项目提取。
+description: 抢购/秒杀自动化。多线程并发Barrier同步、SOCKS5动态代理池(TTL/限频/预取)、库存监控、纪念币/门票/电商抢购、币安期货HMAC签名、登录超时重连策略。当用户要做定时抢购/秒杀/批量并发请求时使用。
 ---
 
 # 抢购/秒杀自动化 (Auto-Learned)
@@ -125,6 +125,40 @@ context = ssl.create_default_context()
 
 - **根因**：ETIMEDOUT/ECONNRESET 多为网关或网络问题，自动重连 + 登录失败后再次 new 连接会叠加成「一直 1/5、2/5 重连」的观感。
 - **对策**：设登录/发单总失败次数或总时长上限，超限后前端明确提示并停止重试；crash.log 与 server 日志对比定位问题网关 IP，可做网关黑名单或降低该 IP 重连次数；健康检查超时（如 60s 无数据）触发断线重连时，避免与登录重试叠加成死循环。
+
+## SOCKS5 动态代理 IP 信誉与反爬
+
+### 动态 vs 粘性 (Sticky) 代理
+
+| 模式 | 格式示例 | 特点 |
+|---|---|---|
+| 动态 | `socks5://user-res-ROW:pass@host:9595` | 每次新连接换 IP |
+| 粘性 | `socks5://user-res-ROW-Lsid-{id}-TTL-1800:pass@host:9595` | 同 Lsid 保持 IP 30 分钟 |
+
+### IP 信誉问题 (LinkedIn 实测)
+
+- 住宅代理 IP 也会被目标站点标记，不是只有机房 IP 才被封
+- 测试 5 个不同住宅 IP (美国/欧洲)，**全部** 被 LinkedIn 拦截 profile 页 (999)，但 login 页正常 (200)
+- 粘性代理: 同一 IP 持续被拦截，重试无意义
+- **动态代理**: 每次 re-init 换新 IP，约 60% 的 IP 能通过，配合重试策略可解决
+
+### 动态代理 + 重试的最佳实践
+
+```
+1. init session -> 访问基础页拿 cookie
+2. 发请求 -> 如果被拦截 (999/403):
+   a. 重建 session (动态代理自动换 IP)
+   b. 重新拿 cookie
+   c. 重试，等待时间递增 (3s, 5s, 7s...)
+3. 成功后复用当前 session (keep-alive 保持同 IP)
+```
+
+### 多线程 + 动态代理注意事项
+
+- 每个线程独立 session + 独立代理连接
+- 粘性代理: 每个线程用不同 Lsid (`base_id + worker_id`)，避免共享 IP
+- 动态代理: 线程间天然隔离，无需特殊处理
+- `threading.Event` 做全局 stop 信号，`time.sleep` 改为可中断版本 (每 0.5s 检查)
 
 ## 项目结构偏好
 

@@ -1,6 +1,6 @@
 ---
 name: cursor-plans-transcripts
-description: 从 Cursor plans 与 agent-transcripts 总结并更新 skills/rules 的工作流。用户要求「总结 plans/对话更新 skill 或 rules」时使用。
+description: Cursor plans 与对话数据总结工作流。遍历 plans/agent-transcripts 抽取可复用模式，决策更新或新建 skill/rules。当用户要求「总结 plans」「更新 skill」「整理对话经验」时使用。
 ---
 
 # Cursor Plans 与对话数据 -> Skills/Rules 更新
@@ -40,6 +40,9 @@ description: 从 Cursor plans 与 agent-transcripts 总结并更新 skills/rules
 | 安卓加固/模拟器/Frida 检测绕过 | android-anti-detect-bypass |
 | JS AST 反混淆(Babel) | ast-deobfuscate |
 | 腾讯防水墙滑块 | tcaptcha-solver |
+| 数美(Shumei)点选验证码、fverify DES多Key | shumei-captcha-reverse |
+| WebSocket 二进制协议逆向(Protobuf+AES) | ws-binary-protocol-reverse |
+| 连信APP逆向、libzhangxin unidbg签名解密、EncryptedJsonRequest | lianxin-app-reverse |
 
 ## 数据位置
 

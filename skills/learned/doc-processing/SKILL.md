@@ -1,20 +1,24 @@
 ---
 name: doc-processing
-description: 文档处理工作流。Excel/PDF/Word 读取分析、MCP 文档工具集成、思维导图生成、表格框架创建。从 exccc/kfff/kj 等项目提取。
+description: 文档处理工作流。Excel/PDF/Word/PPT 读写分析、MCP 按需启动命令、思维导图生成、表格框架创建。当用户要求读取/分析/生成 Excel、PDF、Word、PPT 文档时使用。
 ---
 
-# 文档处理工作流 (Auto-Learned)
+# 文档处理工作流
 
 用户常需要处理 Excel、PDF、Word 文档，通常通过 MCP 工具完成。
 
-## MCP 文档工具集
+## 文档工具（按需后台调用）
 
-| 工具 | 用途 | 安装位置 |
+PPT/Word/Excel/PDF 不默认启用为 MCP。需要时在项目目录下执行对应命令（后台运行），待服务就绪后通过 MCP 调用。
+
+| 类型 | 用途 | 启动命令 |
 |------|------|----------|
-| docx MCP | Word 文档读写、表格操作 | 项目级 mcp.json |
-| pdf-reader MCP | PDF 文本提取、OCR | 项目级 mcp.json |
-| excel MCP | Excel 读写、格式化 | 项目级 mcp.json |
-| document-loader | AWS 文档加载器 | 项目级 mcp.json |
+| Excel | Excel 读写、表格处理 | `npx -y @negokaz/excel-mcp-server` |
+| PDF | PDF 文本提取、阅读 | `npx -y @sylphx/pdf-reader-mcp` |
+| Word | Word 文档读写、表格 | `uvx --from office-word-mcp-server word_mcp_server` |
+| PPT | PPT 创建、编辑、审阅 | `uvx pptx-mcp serve` |
+
+先确认 `npx`、`uvx` 可用；若用户环境无 uv，Word/PPT 可改用其他已安装方式。
 
 ## 常见工作流
 
@@ -48,24 +52,6 @@ description: 文档处理工作流。Excel/PDF/Word 读取分析、MCP 文档工
 ## 表格框架生成
 
 用户有时根据图片生成表格框架（如从截图创建 Excel/Word 表格）。
-
-## MCP 配置模式
-
-用户习惯在 `mcp.json` 中按需添加文档处理 MCP：
-```json
-{
-  "mcpServers": {
-    "docx": {
-      "command": "...",
-      "args": ["..."]
-    },
-    "pdf-reader": {
-      "command": "...",
-      "args": ["..."]
-    }
-  }
-}
-```
 
 ## 注意事项
 

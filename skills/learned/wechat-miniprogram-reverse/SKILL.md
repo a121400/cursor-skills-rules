@@ -1,6 +1,6 @@
 ---
 name: wechat-miniprogram-reverse
-description: 微信小程序逆向与环境绕过。PC 端小程序 H5 页面环境检测绕过、WMPFDebugger 开 CDP 端口 + jshook 连接逆向、SunnyNet JS 替换、User-Agent 伪装、Vue 路由分析、ucToken 用户链路调试。适用于小程序签到/抢购/自动化场景。
+description: 微信小程序逆向。PC端H5环境检测绕过(isMobile/UA伪装)、WMPFDebugger+jshook CDP调试、SunnyNet JS替换与UA改写、EdgeOne 567 WAF绕过、wx.getSystemInfoSync CDP注入、Vue路由分析。当逆向微信小程序或在PC微信中运行小程序自动化时使用。
 ---
 
 # 微信小程序 H5 逆向 (实战总结)
@@ -153,6 +153,42 @@ ucToken (URL 参数) -> getUserInfoByUcToken (API) -> sessionStorage["userInfo"]
 
 - 若后端根据 User-Agent 拒绝：String(UTF8) 规则把 "MiniProgramEnv/Windows WindowsWechat/WMPF" 替换为 "MiniProgramEnv/Android ..."。
 
+## PC 端白屏（EdgeOne 567 拦截）
+
+### 现象与根因
+
+- 小程序在 PC 打开后纯白屏、无内容。
+- **根因**：业务接口（如 bymall 等）走腾讯云 **EdgeOne WAF**，按请求头 User-Agent 识别 PC（含 `Windows NT 10.0`、`MiniProgramEnv/Windows WindowsWechat/WMPF`）后直接拦截，返回 **HTTP 567** 的拦截页（HTML），而非业务 JSON，首屏接口拿不到数据导致白屏。
+
+### 排查步骤
+
+1. SunnyNet 已开且代理 WeChatAppEx：`request_search(url="bymall")` 或目标域名。
+2. `request_get(theology=ID)` 看该请求：若 statusCode 为 567、response.body 为「请求已被站点的安全策略拦截」/ EdgeOne 页，即 WAF 按 UA 拦截。
+3. 请求头中 User-Agent 含 `Windows NT 10.0; Win64; x64` 与 `MiniProgramEnv/Windows WindowsWechat/WMPF ...`。
+
+### 绕过方式
+
+**方式一：SunnyNet 整段 UA 替换（推荐）**
+
+- 局部替换（两段）有时对请求头不生效，优先用 **一条整段 UA** 的 String(UTF8) 规则：
+  - 源：当前 PC 微信完整 UA，例如  
+    `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ... MicroMessenger/7.0.20.1781(0x6700143B) ... MiniProgramEnv/Windows WindowsWechat/WMPF WindowsWechat(0x63090a13) UnifiedPCWindowsWechat(0xf2541211) XWEB/18787`
+  - 目标：安卓小程序 UA，例如  
+    `Mozilla/5.0 (Linux; Android 13; SM-G9980) AppleWebKit/537.36 ... MicroMessenger/7.0.20.1781(0x6700143B) ... MiniProgramEnv/android`
+- 微信升级后 UA 版本号会变，若仍被 567 再按新 UA 更新该条规则。
+
+**方式二：断点改头后放行**
+
+- `breakpoint_add(url_pattern="bymall\\.dasongwuxiacheng\\.com")`（或目标域名正则）。
+- 用户重新打开小程序，请求被拦截后，`request_search(url="bymall")` 取最新 theology。
+- `request_modify_header(theology=ID, key="User-Agent", value="安卓完整UA")`。
+- `request_release_all()` 放行。验证通过后可去掉断点，改用方式一持久化。
+
+### WMPFDebugger 使用顺序
+
+1. 先运行 `npx ts-node src/index.ts` 再打开小程序，最后开 DevTools 或连 jshook（否则易连不上）。
+2. 浏览器打开 `devtools://devtools/bundled/inspector.html?ws=127.0.0.1:62000`（端口见 src/index.ts 的 CDP_PORT）；jshook 连 `ws://127.0.0.1:62000`。
+
 ## 调试技巧
 
 ### SunnyNet 请求分析
@@ -168,6 +204,7 @@ ucToken (URL 参数) -> getUserInfoByUcToken (API) -> sessionStorage["userInfo"]
 
 | 错误 | 含义 | 排查方向 |
 |------|------|----------|
+| 567 / 白屏 | EdgeOne WAF 按 UA 拦截 | Sunny 整段 UA 替换或断点改 User-Agent |
 | 签到异常 (A80065) | 用户身份未建立 | 检查 userInfo 链路 |
 | 请用手机打开 | PC 环境被检测 | 检查 isMobile() 绕过 |
 | 活动已结束 | actvStatus 异常 | 检查 validateActivityStatus |
@@ -180,4 +217,4 @@ ucToken (URL 参数) -> getUserInfoByUcToken (API) -> sessionStorage["userInfo"]
 3. **保留原始流程**: 不要跳过 env 检测、不要跳过 getUserInfoByModule
 4. **配合协议头**: JS 层改 navigator + SunnyNet 改 HTTP 头，双管齐下
 
-Last updated: 2026-03-07
+Last updated: 2026-03-08
