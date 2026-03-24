@@ -1,5 +1,5 @@
 ---
-description: 本地 skills/rules 更新后同步到 GitHub 的触发词与执行步骤
+description: 本地 skills/rules 更新后同步到 GitHub 的触发词与执行步骤。当用户说「更新 skill」且实际修改了 skill 文件后，必须自动 git add + commit + push。
 alwaysApply: false
 ---
 
@@ -11,6 +11,7 @@ alwaysApply: false
 - 「更新 skill 推送到 github」「把 skill 推送到 github」
 - 「同步 rules 到 github」「同步 skills 和 rules 到 github」
 - 「本地 skill 更新后同步 github」「skill 更新后推送到 github」
+- 「更新 skill」—— 当对 skill 文件做了新建/修改/删除/合并操作后，**自动**执行下方同步步骤，无需用户额外说"推送到 github"
 
 ## 执行步骤
 
