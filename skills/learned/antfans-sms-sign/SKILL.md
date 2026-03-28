@@ -110,13 +110,36 @@ signer.close()
 
 ## 六、关键逆向发现
 
-### APSE 8.0.0 架构
+### APSE 8.0.0 SCP VM 架构（深度分析）
 - `SignJNIBridge`（QM）和 `EdgeNativeBridge`（Sign SCP）共用 libAPSE_8.0.0.so
 - `initSI` 做 SO 完整性校验，必须在 hook 前调用
-- QM 193 字节（含 32B SCP 数据），base64 编码
+- QM 有两种模式：
+  - **Bridge 路径**：151字符 AQAA_（无 SCP，unidbg 可生成）
+  - **SCP 路径**：193字符 AQAB_（含 32B SCP block，每次调用不同）
+
+### SCP 32 字节结构
+```
+Bytes 0-3:  4b8f67bc (magic, 常量)
+Bytes 4-5:  递增计数器
+Bytes 6-7:  6935 (常量)
+Bytes 8-11: 9d010000 (常量)
+Bytes 12-31: 20字节密码学计算结果 (每次不同)
+```
+- SCP block 由 `sub_6F578`（独立 SCP 生成 VM）计算
+- 通过 `sub_6B874`（type=0x4F0）组装到 QM
+- 调用链：getColorInfo VM(0x5C91C) → Bridge VM(0x6E1A4) → SCP VM(0x6F578) → QM组装(0x6B874)
+
+### unidbg SCP 失败原因
+- SO 内有自解密代码段（需要 warm text dump）
+- 三层嵌套 VM 分发器，分支条件依赖 data section 中的密钥/配置表
+- MTE（Memory Tagging Extension）指针遍布 heap，Unicorn 不支持 TBI
+- 已尝试：warm dump 597MB + TBI handler + SO mirror + MTE strip → VM 操作码序列仍无法重现（蝴蝶效应）
+- **结论**：APSE 8.0.0 的 SCP VM 需要完整 Android 运行时，unidbg 无法模拟
 
 ### 风控体系
 - 30831 = 操作频繁/设备风控，非频率限制
 - 设备指纹三件套（color/device-token/ap-token）任一错误即触发
-- QM 的 bizToken/mode 错误也触发 30831（不是格式错误提示）
-- 代理 IP 质量影响：住宅代理仍可能被标记
+- QM 的 bizToken/mode 错误也触发 30831
+- unidbg Bridge QM（151→193补丁）被服务器拒绝，SCP block 必须真实计算
+- x-device-color 每次调用动态生成（非静态缓存）
+- 代理 IP 质量影响：住宅代理仍可能被标记，直连优先
