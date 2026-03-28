@@ -160,6 +160,94 @@ context = ssl.create_default_context()
 - 动态代理: 线程间天然隔离，无需特殊处理
 - `threading.Event` 做全局 stop 信号，`time.sleep` 改为可中断版本 (每 0.5s 检查)
 
+## C# WinForms 抢购 GUI 模式 (JWRush/劲舞团)
+
+### 架构
+
+| 组件 | 职责 |
+|------|------|
+| DataGridView | 账号列表 + 状态 + 支付链接 |
+| ShopClient | HttpClient 封装（代理/Cookie/登录） |
+| SemaphoreSlim | 并发账号数控制 |
+| CancellationTokenSource per account | 单账号成功/风控即停 |
+| ConcurrentQueue<string> | 代理池循环使用 |
+| Timer + ConcurrentQueue | 日志批量刷新（50ms 间隔） |
+
+### OAuth2 登录含 JS 重定向
+
+```
+POST login API → result_uri
+GET result_uri → 302 → checkstatOauthZc?code=xxx&state=00
+→ 返回 <script>top.location.href='...&state=1'</script>
+→ 必须再 GET 带 state=1 的 URL 才能真正建立 session
+```
+
+### 一键登录 + 定时抢购流程
+
+```
+一键登录（不走代理）→ 存 cookie 到 Row.Tag
+  ↓ 定时模式:
+T-5分钟: 自动重新登录刷新 cookie
+T-5秒:   等待
+T:        提取代理 → SpinWait 精确等待 → 瞬间发请求
+  ↓ 非定时模式:
+点击开始 → 提取代理 → 直接发请求
+```
+
+### 代理管理
+
+- HTTP 代理池 API（如熊猫代理），按 `min(账号×并发×2, 200)` 提取
+- `ConcurrentQueue` 循环使用（TryDequeue → Enqueue 放回队尾）
+- 503/Timeout 自动换下一个代理：`client.Dispose(); NewClient();`
+- C# `WebProxy` 需设 `BypassProxyOnLocal = false` + `ServerCertificateCustomValidationCallback = true`
+
+### 风控关键词即停
+
+```csharp
+if (detail.Contains("重复下单") || detail.Contains("频繁") ||
+    detail.Contains("明日") || detail.Contains("购买上限") ||
+    detail.Contains("已到达"))
+    → 该账号 CancellationTokenSource.Cancel()
+    → UpdateRowStatus(ri, "风控")
+
+if (detail.Contains("IP被封") || detail.Contains("403"))
+    → 全局 _cts.Cancel()（所有账号停止）
+
+if (detail.Contains("未失效"))
+    → 有待支付订单，仍尝试提交获取支付链接
+```
+
+### 结果推送
+
+- Flask 网页服务（/api/push POST 接收，/ 展示）
+- C# 抢购成功时 POST 推送 `{phone, pay_url, order_no, amount}`
+- 网页 3 秒自动刷新，暗色主题，点击跳转支付
+- Nginx 反代 `/pay/` → Flask 8899
+
+### 支付链接提取
+
+```
+1. GET /cart/buy?params → 确认页 HTML（含 orderid + sign）
+2. POST /Cart/buyresultsign → 302 → lianpay.bamboogame.cn?...JWT...
+   或 AllowAutoRedirect=true 时检查 finalUrl.Contains("lianpay")
+3. 支付链接含 au_transaction_order_number + transaction_amount + access=Bearer JWT
+```
+
+### 配置持久化
+
+- JSON 文件 `jwrush_config.json` 保存所有设置 + 账号列表
+- 窗体关闭自动保存，启动自动加载
+- 大区列表异步加载（3秒后恢复选中索引）
+
+### 状态颜色
+
+| 状态 | 颜色 |
+|------|------|
+| 成功 | 绿色背景 |
+| 待支付 | 黄色背景 |
+| 风控/IP被封/失败 | 红色背景 |
+| 其他 | 白色 |
+
 ## 项目结构偏好
 
 - 配置项独立文件

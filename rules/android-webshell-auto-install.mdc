@@ -1,0 +1,20 @@
+---
+description: WebShellApp 有改动时自动 gradlew installDebug，无需用户再说「编译安装」
+globs: "**/WebShellApp/**"
+alwaysApply: false
+---
+
+# WebShellApp 自动编译安装
+
+1. **触发**  
+   本次对话中若修改了任意 `WebShellApp` 目录下文件（含 `app/src/main/assets/www`、Kotlin/Java、资源、Gradle 等），且用户**未**说明「不要安装 / 只改代码不装」时，在**本轮任务收尾**自动执行安装。
+
+2. **命令**（Windows PowerShell，用分号串联，不用 `&&`）  
+   `Set-Location "…\WebShellApp"; .\gradlew.bat installDebug`  
+   路径取当前工作区内的 `WebShellApp` 实际位置（例如 `...\apkxiugai\WebShellApp`）。
+
+3. **结果**  
+   根据 Gradle 输出简要汇报：成功则写清设备名；失败则写清原因（无设备、`adb`、构建错误等）。
+
+4. **可跳过**  
+   仅改与运行无关内容（纯文档、与本壳无关的其它目录），或用户明确不要安装时，不执行 `installDebug`。

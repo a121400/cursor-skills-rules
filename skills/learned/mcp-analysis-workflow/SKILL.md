@@ -1,6 +1,6 @@
 ---
 name: mcp-analysis-workflow
-description: MCP 工具分析工作流。游戏协议抓包解析、多游戏 profile 配置、Frida 桥接 MCP(无CDP时)、SunnyNet HTTP API 抓取、加密参数对照分析。当需要用 MCP 工具做流量分析/协议逆向/接口提取时使用。
+description: MCP 工具分析工作流。游戏协议抓包解析、多游戏 profile 配置、Frida 桥接 MCP(无CDP时)、SunnyNet HTTP API 抓取、加密参数对照分析。真机 Android 经局域网连 PC SunnyNet 时配合 learned/sunny-real-device-lan-proxy。当需要用 MCP 工具做流量分析/协议逆向/接口提取时使用。
 ---
 
 # MCP 分析工作流
@@ -36,6 +36,11 @@ description: MCP 工具分析工作流。游戏协议抓包解析、多游戏 pr
 
 - 目标进程无对外 CDP 端口时：Frida 脚本在进程内抓 Network/Console 或执行逻辑，经 `send()` 发到 Node；Node 开本地 HTTP（如 29222）暴露 `/network`、`/console`、`POST /evaluate`、`GET /dom`，MCP 连该 HTTP 即获得类 DevTools 能力。
 - 反向调用：MCP 的 evaluate 请求由 Node 经 `script.postMessage()` 发 Frida，脚本在能访问页面上下文时执行后 `send()` 回 Node 再响应 HTTP。主进程拿不到页面上下文时可先做 Phase1（仅 Network/通道），Phase2 再在渲染进程 attach 或注入页面 JS 与桥接通信。
+
+## 真机 + PC SunnyNet（局域网代理）
+
+- **不要**在手机代理里填 `127.0.0.1`（除非 SunnyNet 跑在手机上）。
+- 用 **电脑内网 IP:SunnyNet 端口** + `adb shell settings put global http_proxy ...`；清代理、防火墙、证书、端口对齐见 **`learned/sunny-real-device-lan-proxy`**（`SKILL.md`）。
 
 ## SunnyNet 配套 HTTP API 抓取 (IM/客服系统)
 
