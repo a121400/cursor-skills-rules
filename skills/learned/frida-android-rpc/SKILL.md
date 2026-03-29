@@ -211,3 +211,87 @@ frida-ps -U | findstr target
 3. **连接复用**：如果没有反检测，保持 session 多次调用
 4. **批量参数传递**：一次传入所有需要的参数，减少 round-trip
 5. **错误重试**：attach 失败自动重启 APP 重试（最多 3 次）
+
+## 八、进程内存 Dump（unidbg 上下文获取）
+
+当需要将 SDK 的运行时状态 dump 出来给 unidbg 复现时：
+
+### Frida warm dump（推荐）
+```javascript
+// 在单次 RPC 内完成 warmup + dump，避免反检测
+rpc.exports = {
+    warmupAndDump: function() {
+        return new Promise(function(resolve) {
+            Java.perform(function() {
+                // 1. 调用目标函数激活 SDK 状态
+                var S = Java.use("com.target.SignClass");
+                S.init();
+
+                // 2. dump SO data+BSS
+                var mod = Process.findModuleByName("libtarget.so");
+                // ...读取 data section 写入文件
+                resolve("done");
+            });
+        });
+    }
+};
+```
+
+### root /proc/PID/mem dump
+```bash
+# 不受 Frida 反检测限制，直接读进程内存
+adb shell "su -c cat /proc/<PID>/maps" | grep libtarget
+adb shell "su -c dd if=/proc/<PID>/mem bs=1 skip=<offset> count=<size> of=/sdcard/dump.bin"
+```
+
+### MTE 指针处理
+- Android MTE（Memory Tagging Extension）在高字节添加 tag（0xA0-0xBF）
+- unidbg/Unicorn 不支持 TBI → 需剥离 tag：`addr & 0x00FFFFFFFFFFFFFF`
+- 区分真 heap 指针 vs config data：heap 指针高字节 0xA0-0xBF 或地址 >= 0x7000000000
+
+## 九、LSPosed/Vector Xposed 替代方案
+
+当 Frida 被反检测杀死时，Xposed 模块更隐蔽且持久：
+
+### 优势
+- 在 Zygote fork 时注入，比 Frida attach 更早
+- 不会在 /proc/maps 中出现 frida-agent
+- 不监听 27042 端口
+- 持久化运行，无需每次 attach
+- TCP 长连接到远程中继服务器，手机无需 ADB 连 PC
+
+### 模块结构 (xposed-signer)
+```
+xposed-signer/
+  app/src/main/java/com/antfans/xposed/
+    SignerModule.java          # IXposedHookLoadPackage 入口
+    SignerRelayClient.java     # TCP 长连接到中继服务器(推荐)
+    SignerSocketServer.java    # 本地 Socket 服务(备用)
+  app/src/main/assets/
+    xposed_init                # 入口类声明
+  build.bat                    # javac+d8+aapt2+apksigner 编译
+```
+
+### 中继模式工作流 (推荐)
+1. Xposed 模块 hook `Application.onCreate`，在 antfans 进程内启动 `SignerRelayClient`
+2. TCP 长连接到中继服务器 `42.193.177.63:443`，JSON Lines 协议
+3. PC 端 HTTP 请求 `POST /signer/sign {"method":"getAll","sha":"..."}` -> 中继转发到手机
+4. 手机调用 APSE SDK 生成 QM+color+tokens 返回
+5. 心跳保活：服务器每 30s 发 `{"cmd":"ping"}`，手机回 `{"type":"pong"}`
+6. 断连自动重连：`connectLoop()` 断开后 5 秒重试
+
+### 编译安装
+```bash
+cd xposed-signer && build.bat
+adb uninstall com.antfans.xposed.signer   # 签名不兼容时需先卸载
+adb install build/unsigned.apk
+# 在 LSPosed/Vector 管理器中激活模块，勾选 com.antfans.fans
+adb shell "su -c 'am force-stop com.antfans.fans'"
+adb shell "monkey -p com.antfans.fans -c android.intent.category.LAUNCHER 1"
+```
+
+### 常见问题
+- **phone_connected=false**: 检查手机网络、重启 APP、看 `adb logcat | grep AntfansSigner`
+- **503 服务器不可用**: 中继服务器 TCP 连接断了，已加心跳+重试修复
+- **INSTALL_FAILED_UPDATE_INCOMPATIBLE**: 新编译签名不同，需先 uninstall 再 install
+- **Xposed 框架**: 当前用 Vector v2.0 (LSPosed 分支)，Zygisk 模式，KernelSU

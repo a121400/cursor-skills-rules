@@ -161,3 +161,33 @@ session.on('child-added', child => {
 - `ProcessNotFoundError` / `script has been destroyed` = APP 延迟检测杀进程，缩短 attach 时间或加 bypass
 - **不要**使用 `Process.setExceptionHandler`，与 Houdini 信号处理冲突
 - Java hook 需延迟（setTimeout 3~5s）再 `Java.perform`，避免 ART 未就绪
+
+## APSE SO 代码完整性校验
+
+APSE 8.0.0 的 SO 有代码段完整性校验（CRC/hash），**SO 内部不能 hook**：
+- `Interceptor.attach` 在 SO 热路径（VM 分发器）会被检测 → APP 崩溃
+- `MemoryAccessMonitor` 扫描频率过高也会被杀
+- **安全做法**：只 hook Java 层或 libc 层；SO 内部用读内存（`Memory.readXxx`）替代 hook
+
+### Frida warm dump 防检测技巧
+```python
+# 在单次 RPC 调用内完成所有操作（<2秒）
+session = device.attach(pid)
+script = session.create_script("""
+rpc.exports = {
+    warmupAndDump: function() {
+        return new Promise(function(resolve) {
+            Java.perform(function() {
+                // 1. 调用目标函数（激活 SDK）
+                // 2. 读取 SO 内存（Memory.readByteArray，不 hook）
+                // 3. 写入文件到 APP cache 目录
+                resolve("done");
+            });
+        });
+    }
+};
+""")
+script.load()
+script.exports_sync.warmup_and_dump()
+session.detach()  # 立即 detach
+```

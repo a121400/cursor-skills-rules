@@ -248,6 +248,33 @@ if (detail.Contains("未失效"))
 | 风控/IP被封/失败 | 红色背景 |
 | 其他 | 白色 |
 
+## C# WinForms 多账号抢购工具 (AntfansHelper/鲸探)
+
+### 架构特点
+
+| 组件 | 职责 |
+|------|------|
+| SmartThreadPool | 并发下单(替代手动 Thread/Barrier) |
+| RelaySigner | 远程中继签名(Xposed TCP 模块, 503 自动重试) |
+| ApseSigner | 本地 JAR 签名(unidbg, 随 EXE 启动) |
+| ProxyService | 熊猫代理池(ConcurrentQueue, 用完即弃) |
+| curl_cffi subprocess | TLS 指纹绕过(mgs-biz 域 WAF 405) |
+| accounts.txt | 纯文本持久化 `手机号----sessionId=xxx----userId` |
+| TabControl | 启动/定时两个 Tab 页 |
+
+### TLS WAF 绕过模式
+mgs-biz.antfans.com 对 .NET HttpWebRequest 返回 405，需 Python subprocess:
+```
+C# AntfansApi -> TryPostViaCurlCffi() -> python http_helper.py (stdin JSON)
+  -> curl_cffi impersonate=chrome120 -> 返回 JSON (stdout)
+  -> 失败回退: safari17_0, chrome131_android
+```
+
+### 编译注意
+- 项目 ToolsVersion=15.0，必须用 VS2022 MSBuild，不能用 .NET Framework 4.0 MSBuild
+- `"C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\MSBuild.exe"`
+- NuGet 包: Newtonsoft.Json 13.0.3, SmartThreadPool 2.2.6
+
 ## 项目结构偏好
 
 - 配置项独立文件
