@@ -124,10 +124,17 @@ xposed-signer/
 - **连接**: TCP 长连接到 `42.193.177.63:443`, JSON Lines 协议
 - **心跳**: 收到 `{"cmd":"ping"}` 回复 `{"type":"pong"}`, 防断连
 - **自动重连**: `connectLoop()` 断开后 5 秒自动重连
-- **缓存**: color/deviceToken/apToken 缓存 5 分钟(CACHE_TTL=300000)
 - **预签名**: 支持 prepare 命令批量预签存入服务端缓存池
 - **编译安装**: `build.bat` 编译 -> `adb install` -> 需在 LSPosed 中激活 -> 重启鲸探生效
 - **签名不兼容**: 重新编译后签名变更需 `adb uninstall` 旧版再 `adb install`
+
+### 动态刷新 (防挂机 30831)
+APP 挂久了 APSE SDK 内部状态老化，导致 color/token 失效触发风控 30831。
+- **x-device-color 不缓存**: 每次请求实时调 `getColorLabel()`，native 层动态计算
+- **token 缓存 60 秒**: `TOKEN_CACHE_TTL=60_000`，远小于旧的 5 分钟
+- **定期 updateToken**: 每 3 分钟(`TOKEN_UPDATE_INTERVAL=180_000`)主动调 `APDID.updateToken()` 触发 SDK 内部刷新
+- **强制刷新命令**: 收到 `{"cmd":"refresh"}` 立即清缓存重新获取，服务端 `/refresh` 端点可触发
+- **QM 始终实时**: `APSign.getColorInfo()` 每次都调，无缓存
 
 ### APSE API 调用 (在 antfans 进程内)
 ```java
@@ -163,6 +170,7 @@ APDID.getTokenResult("antfans_android").apdidToken
 |------|------|------|
 | /sign | POST | `{"method":"getAll","sha":"..."}` -> QM+color+tokens |
 | /status | GET | `{"phone_connected":true/false}` |
+| /refresh | POST | 强制手机端刷新 color/token 缓存(防挂机30831) |
 | /prepare | POST | 预签名池 `{"itemId":"...","userId":"...","poolSize":10}` |
 | /cached_sign | POST | 从缓存池取预签结果 |
 | /cache_status | GET | 缓存池状态 |
